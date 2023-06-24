@@ -1,0 +1,255 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+rm(list=ls(all=TRUE)) #清除右手邊Environment的所有資料集
+setwd("C://Users/zxczx/OneDrive/桌面/中華汽車") #設定路徑
+library("readxl")
+library("tseries")
+library("forecast")
+library("corrplot")
+library("Hmisc")
+library("zoo")
+library("strucchange")
+library("randomForest")
+
+pacman::p_load(magrittr, readr, caTools, ggplot2, dplyr, vcd, ROCR, plotly, latex2exp, Matrix, tidyr,data.table,tidyverse)
+```
+
+```{r}
+car <- fread("cmc.csv",encoding = "UTF-8")
+car$brand <- as.factor(car$brand)
+car$number <- as.numeric(car$number)
+car$origin <- as.factor(car$origin)
+car$import <- as.numeric(car$import)
+car$export <- as.numeric(car$export)
+car$goods <- as.numeric(car$goods)
+car$`income average` <- as.numeric(car$`income average`)
+car$covid <- as.numeric(car$covid)
+car$signal <- as.numeric(car$signal)
+car$unem <- as.numeric(car$unem)
+car$steel <- as.numeric(car$steel)
+car_before <- car[1:102926,]#歷史組
+car_after <- car[102927:138806,]#對照組
+
+# oil,steel,import,export,goods,CPI,CPIT,economicgrowth,gdp,`income average`,industry,signal,lead,unemployement,unem,stock,return
+#  
+# 歷史組
+car_before_1 <- car_before %>%
+  group_by(year,month) %>% # 以年跟月來分組
+    mutate(all = sum(number)) %>% # 新增每年分別總領牌數欄位
+  select(year,month,brand,oil,steel,import,export,goods,CPI,CPIT,economicgrowth,gdp,`income average`,industry,signal,lead,unemployement,unem,stock,return,number,all) %>%
+  filter(brand %in% c("LUXGEN","HYUNDAI")) %>% # 篩選出LUXGEN與HYUNDAI的部分
+  group_by(year,month,brand,oil,steel,import,export,goods,CPI,CPIT,economicgrowth,gdp,`income average`,industry,signal,lead,unemployement,unem,stock,return,all) %>%
+  summarise(Total = sum(number)) %>% # 總和出LUXGEN與HYUNDAI每年分別的領牌數
+  mutate(Rate = Total / all *100) #新增品牌市占率欄位
+
+car_before_1 <- car_before_1[,c(1:20,23)]
+
+car_before_2 <- spread(car_before_1, key = "brand", value = "Rate")
+
+car_before_2$Date <- as.yearmon(paste(car_before_2$year, car_before_2$month), "%Y %m")
+
+
+# 標準化
+car_before_2$oil <- scale(car_before_2$oil)
+car_before_2$steel <- scale(car_before_2$steel)
+car_before_2$import <- scale(car_before_2$import)
+car_before_2$export <- scale(car_before_2$export)
+car_before_2$goods <- scale(car_before_2$goods)
+car_before_2$gdp <- scale(car_before_2$gdp)
+car_before_2$CPI <- scale(car_before_2$CPI)
+car_before_2$CPIT <- scale(car_before_2$CPIT)
+car_before_2$industry <- scale(car_before_2$industry)
+car_before_2$lead <- scale(car_before_2$lead)
+car_before_2$`income average` <- scale(car_before_2$`income average`)
+car_before_2$unem <- scale(car_before_2$unem)
+
+# 促銷欄位擴增(有實施外部促銷設為1，無則設為0)
+market_before <- c(0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,0,0,0,1,1,1,1,0,0,0,1)
+car_before_2 <- cbind(car_before_2,market_before)
+names(car_before_2)[23] <- "market"
+# 對照組
+car_after_1 <- car_after %>%
+  group_by(year,month) %>%
+    mutate(all = sum(number)) %>%
+  select(year,month,brand,oil,steel,import,export,goods,CPI,CPIT,economicgrowth,gdp,`income average`,industry,signal,lead,unemployement,unem,stock,return,number,all) %>%
+  filter(brand %in% c("LUXGEN","HYUNDAI")) %>%
+  group_by(year,month,brand,oil,steel,import,export,goods,CPI,CPIT,economicgrowth,gdp,`income average`,industry,signal,lead,unemployement,unem,stock,return,all) %>%
+  summarise(Total = sum(number)) %>%
+  mutate(Rate = Total / all *100)
+  
+# summarize(Total = sum(number)) %>%
+  #mutate(Rate = Total / all *100)
+
+car_after_1 <- car_after_1[,c(1:20,23)]
+
+car_after_2 <- spread(car_after_1, key = "brand", value = "Rate")
+
+car_after_2$Date <- as.yearmon(paste(car_after_2$year, car_after_2$month), "%Y %m")
+
+car_after_2$oil <- scale(car_after_2$oil)
+car_after_2$steel <- scale(car_after_2$steel)
+car_after_2$import <- scale(car_after_2$import)
+car_after_2$export <- scale(car_after_2$export)
+car_after_2$goods <- scale(car_after_2$goods)
+car_after_2$gdp <- scale(car_after_2$gdp)
+car_after_2$`income average` <- scale(car_after_2$`income average`)
+car_after_2$unem <- scale(car_after_2$unem)
+car_after_2$CPI <- scale(car_after_2$CPI)
+car_after_2$CPIT <- scale(car_after_2$CPIT)
+car_after_2$industry <- scale(car_after_2$industry)
+car_after_2$lead <- scale(car_after_2$lead)
+
+# 促銷
+market_after <- c(1,1,0,0,1,1,1,1,0,0,1,1,1,0,0,0,1,1,1,0,0,0,1,1)
+car_after_2 <- cbind(car_after_2,market_after)
+names(car_after_2)[23] <- "market"
+
+
+# 實際組
+car_real <- car_after %>%
+  group_by(year,month) %>%
+    mutate(all = sum(number)) %>%
+  select(year,month,brand,oil,steel,import,export,goods,CPI,CPIT,economicgrowth,gdp,`income average`,industry,signal,lead,unemployement,unem,stock,return,number,all) %>%
+  filter(brand %in% c("LUXGEN","HYUNDAI")) %>%
+  group_by(year,month,brand,oil,steel,import,export,goods,CPI,CPIT,economicgrowth,gdp,`income average`,industry,signal,lead,unemployement,unem,stock,return,all) %>%
+  summarise(Total = sum(number))
+car_real <- spread(car_real, key = "brand", value = "Total")
+
+```
+
+# 相關性分析
+```{r}
+cor = cor(HYUNDAI_break[,c(3:19,20,23,24)])
+corrplot(corr = cor,method = c("circle"),type = c("lower"))
+abs(cor(HYUNDAI_break$HYUNDAI,HYUNDAI_break[,c(3:21,23,24)]))
+order(abs(cor(HYUNDAI_break$HYUNDAI,HYUNDAI_break[,c(3:21,23,24)])))
+#LUXGEN: 15,17,12,24,16
+#HYUNDAI:3,12,17,24
+```
+
+
+# LUXGEN預測
+```{r}
+LUXGEN_timeseries <- ts(car_before_2$LUXGEN, frequency = 12, start = c(2012, 01))
+LUXGEN_timeseries_after <- ts(car_after_2$LUXGEN, frequency = 12, start = c(2018, 01))
+adf.test(LUXGEN_timeseries)
+
+(breakpoint_LUXGEN <- breakpoints(LUXGEN_timeseries ~ 1)) #1個斷點
+fitted_LUXGEN <- fitted(breakpoint_LUXGEN, breaks = 1)
+LUXGEN_break <- cbind(car_before_2,fitted_LUXGEN)
+names(LUXGEN_break)[24] <- "break"
+
+(breakpoint_LUXGEN_after <- breakpoints(LUXGEN_timeseries_after ~ 1)) 
+fitted_LUXGEN_after <- fitted(breakpoint_LUXGEN_after, breaks = 2)
+summary(breakpoint_LUXGEN)
+
+car_after_2_LUXGEN <- cbind(car_after_2,fitted_LUXGEN_after)
+names(car_after_2_LUXGEN)[24] <- "break"
+
+# 自動挑選最適模型
+auto.arima(LUXGEN_timeseries,stepwise = T,d = 1,trace = T,stationary = T,ic = c("aic"),xreg = as.matrix(LUXGEN_break[,c(12,15:17,24)])) 
+# 建立模型
+LUXGEN_FIT <- Arima(LUXGEN_timeseries,order=c(0,1,1),seasonal = list(order = c(1,0,0),period = 12),xreg = as.matrix(LUXGEN_break[,c(12,15:17,24)]),include.mean = FALSE)
+# 模型檢查
+tsdisplay(residuals(LUXGEN_FIT),lag.max = 50,main = "殘差")
+shapiro.test(LUXGEN_FIT$residuals) #大於0.05，常態
+Box.test(LUXGEN_FIT$residuals, lag = 24,type = "Ljung-Box") #大於0.05，獨立
+
+# 將對照組測試集放入模型之中預測
+predict_LUXGEN <- forecast(LUXGEN_FIT,24,xreg = as.matrix(LUXGEN_break[1:24,c(12,15:17,24)]))
+
+plot(predict_LUXGEN)
+# 將預測情況變成一個data.frame
+predict <- as.data.frame(predict_LUXGEN)
+# 對照組
+car_after_LUXGEN <- car_after_2[,c(21:22)]
+eval <- cbind(predict, car_after_LUXGEN)
+market <- fread("全市場.csv",encoding = "UTF-8") # 讀取預測的全市場資料
+market = market[2:25,2]
+eval <- cbind(eval,market)
+names(eval)[8] <- "all"
+
+eval_LUXGEN <- cbind(eval,car_real[,c(20,22)])
+names(eval_LUXGEN)[9] <- "a_real"
+names(eval_LUXGEN)[10] <- "L_real"
+eval_LUXGEN <- eval_LUXGEN %>% 
+  mutate(predict = all*`Point Forecast`/100) %>%
+  mutate(mae=abs(L_real-predict)) %>% 
+  mutate(mape=abs(L_real-predict)/L_real)
+
+mean(eval_LUXGEN$mae)
+mean(eval_LUXGEN$mape)
+
+# 畫圖
+plot(eval_LUXGEN$Date,eval_LUXGEN$L_real,type = "o",col = "red",main = "LUXGEN_市佔率x整體銷售量(誤差：34.63%)",xlab = "月份",ylab = "領牌數")+
+  lines(eval_LUXGEN$Date,eval_LUXGEN$predict,type = "o",col = "blue")
+legend("topright",c("實際值","預測值"),lty = c(1,1),col = c("red","blue"))
+
+```
+
+# HYUNDAI預測
+```{r}
+HYUNDAI_timeseries <- ts(car_before_2$HYUNDAI, frequency = 12, start = c(2012, 01))
+HYUNDAI_timeseries_after <- ts(car_after_2$HYUNDAI, frequency = 12, start = c(2018, 01))
+
+(breakpoint_HYUNDAI <- breakpoints(HYUNDAI_timeseries ~ 1)) #2個斷點
+fitted_HYUNDAI <- fitted(breakpoint_HYUNDAI, breaks = 2)
+HYUNDAI_break <- cbind(car_before_2,fitted_HYUNDAI)
+names(HYUNDAI_break)[24] <- "break"
+
+(breakpoint_HYUNDAI_after <- breakpoints(HYUNDAI_timeseries_after ~ 1)) 
+fitted_HYUNDAI_after <- fitted(breakpoint_HYUNDAI_after, breaks = 2) # 2
+car_after_2_HYUNDAI <- cbind(car_after_2,fitted_HYUNDAI_after)
+names(car_after_2_HYUNDAI)[24] <- "break"
+adf.test(HYUNDAI_timeseries)
+
+
+auto.arima(HYUNDAI_timeseries,stepwise = T,trace = T,stationary = T,ic = c("aic"),xreg = as.matrix(HYUNDAI_break[,c(3,9,12,15,17,24)]))
+HYUNDAI_FIT <- Arima(HYUNDAI_timeseries,order=c(0,0,0),seasonal = list(order = c(2,0,0),period = 12),xreg = as.matrix(HYUNDAI_break[,c(3,9,12,17,24)]))
+
+# 模型檢查
+tsdisplay(residuals(HYUNDAI_FIT),lag.max = 50,main = "殘差")
+shapiro.test(HYUNDAI_FIT$residuals) # 小於0.05，非常態
+Box.test(HYUNDAI_FIT$residuals, lag = 24,type = "Ljung-Box") #大於0.05，獨立
+
+predict_HYUNDAI <- forecast(HYUNDAI_FIT,24,xreg = as.matrix(car_after_2_HYUNDAI[,c(3,9,12,17,24)]))
+
+plot(predict_HYUNDAI)
+predict <- as.data.frame(predict_HYUNDAI)
+# 對照組
+car_after_HYUNDAI <- car_after_2[,c(20,22)]
+eval <- cbind(predict, car_after_HYUNDAI)
+eval <- cbind(eval,market)
+names(eval)[8] <- "all"
+eval <- cbind(eval,car_real[,20:21])
+names(eval)[9] <- "a"
+names(eval)[10] <- "H_real"
+
+eval_HYUNDAI <- eval %>%
+  mutate(predict = all*`Point Forecast`/100) %>%
+  mutate(mae=abs(H_real-predict)) %>% 
+  mutate(mape=abs(H_real-predict)/ H_real)
+mean(eval_HYUNDAI$mae)
+mean(eval_HYUNDAI$mape)
+
+
+# 畫圖
+plot(eval_HYUNDAI$Date,eval_HYUNDAI$H_real,type = "o",col = "red",main = "HYUNDAI_市佔率x整體銷售量(誤差：9.24%)",xlab = "月份",ylab = "領牌數")+
+  lines(eval_HYUNDAI$Date,eval_HYUNDAI$predict,type = "o",col = "blue")
+legend("topright",c("實際值","預測值"),lty = c(1,1),col = c("red","blue"))
+```
+
+
+
+
+
+
+
+
+
+
+
