@@ -1,9 +1,9 @@
 # China-Motor-Luxgen-Hyundai
 
 #### Preface
-考慮疫情為短期車輛領牌數波動因子，我們與廠商討論後，決定聚焦於疫情前的領牌數
-Training Dataset(2012/1~2017/12) ： 60筆
-Testing Dataset(2018/1~2019/12)  ： 24筆
+考慮疫情為短期車輛領牌數波動因子，我們與廠商討論後，決定聚焦於疫情前的領牌數  
+Training Dataset(2012/1~2017/12) ： 60筆  
+Testing Dataset(2018/1~2019/12)  ： 24筆  
 Output：各品牌領牌數 = 全市場汽車銷售量預測 x 各品牌市占率預測
 
 #### Model
